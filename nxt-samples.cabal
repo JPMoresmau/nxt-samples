@@ -1,0 +1,23 @@
+name:           nxt-samples
+version:        0.1
+cabal-version:  >= 1.2
+build-type:     Simple
+synopsis:       Sample programs operating NXT bricks using the nxt library
+description:    The goal of this project is to collect sample programs using the NXT library.
+stability:      Experimental
+author:         JP Moresmau
+maintainer:     jp@moresmau.fr
+category:       Robotics
+license:        LGPL-3
+license-file:   LICENSE
+copyright:      (c)JP Moresmau 2012
+
+executable bumper
+  build-depends:   
+                   base >= 4,
+                   NXT,
+                   transformers
+  hs-source-dirs:  src
+  ghc-options:     -Wall -rtsopts
+  main-is:         Bumper.hs
+
