@@ -13,11 +13,18 @@ license-file:   LICENSE
 copyright:      (c)JP Moresmau 2012
 
 executable bumper
-  build-depends:   
-                   base >= 4,
+  build-depends:   base >= 4,
                    NXT,
                    transformers
   hs-source-dirs:  src
   ghc-options:     -Wall -rtsopts
   main-is:         Bumper.hs
+  other-modules:   Robotics.NXT.Samples.Helpers
+
+executable gator
+  build-depends:   base >= 4
+  hs-source-dirs:  src
+  ghc-options:     -Wall -rtsopts
+  other-modules:   Robotics.NXT.Samples.Helpers
+  main-is:         Gator.hs
 

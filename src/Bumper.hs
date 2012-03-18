@@ -1,13 +1,16 @@
+{-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 -- | moves a robot using two tracks on engines B & C
 -- the robot moves tills the tactile sensor is pressed, then it reverse a little, turns and start again
 module Main where
 
 import Robotics.NXT
 
+import Robotics.NXT.Samples.Helpers
+
 import System.Environment (getArgs)
 import Control.Concurrent (threadDelay,forkIO)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when, forever)
+import Control.Monad (forever)
 
 import Data.IORef
 import System.IO
@@ -26,9 +29,9 @@ main = do
                 return () 
                 )
         withNXT device (do
-                reset
-                forever $ loop iorC
-                reset
+                reset [B,C]
+                forever $ loop $ pollForStopIOR iorC
+                reset [B,C]
                 liftIO $ threadDelay 1000000  -- wait before killing everything probably not needed after reset   
                 )
         --killThread tid 
@@ -41,18 +44,9 @@ waitForStop iorC=do
           do atomicModifyIORef iorC (\ a -> (False, a))
              return ()
           else waitForStop iorC
-        
--- | reset the NXT brick motors
-reset :: NXT()
-reset = mapM_ resetMotor [B,C]
-  
--- | reset a motor
-resetMotor :: OutputPort -- ^ the output port
-        -> NXT()
-resetMotor p= mapM_ (resetMotorPosition p) [InternalPosition,AbsolutePosition,RelativePosition]
-  
+
 -- | the main loop for the robot
-loop :: IORef Bool -- ^ the stop flag ioref
+loop :: PollForStop -- ^ the stopping action
         -> NXT()
 loop iorC= do
   move iorC [B,C] 75 [0,0] 0 -- move forever
@@ -63,53 +57,5 @@ loop iorC= do
   move iorC [B,C] (-75) [100,-100] 360 -- turn
   stop [B,C] -- stop
   
-  
--- | stop the motors on the given port  
-stop :: [OutputPort] -> NXT()
-stop =mapM_ (\p->setOutputStateConfirm p 0 [Regulated,Brake] RegulationModeMotorSync 0 MotorRunStateIdle 0)
-       
--- | move motors on the given ports till the limit has been reached or the stop signal sent       
-move :: IORef Bool  -- ^ the stop signal ioref
-        -> [OutputPort] -- ^ the output port
-        -> OutputPower  -- ^ the power to apply
-        -> [TurnRatio] -- ^ the turn ratio between engine
-        -> TachoLimit -- ^ the move limit
-        -> NXT()
-move iorC ports power ratios limit=pollForStop iorC $ do
-        let port1= head ports
-        OutputState _ _ _ _ _ _ _ count _ _<-getOutputState port1
-        mapM_ (\(p,r)->setOutputStateConfirm p power [Regulated,MotorOn] RegulationModeMotorSync r MotorRunStateRunning limit) $ zip ports ratios
-        when (limit>0) (pollForCount iorC port1 (count+limit))
-      
--- | wait for the given motor to have reached the limit        
-pollForCount :: IORef Bool  -- ^ the stop signal ioref
-        -> OutputPort -- ^ the output port
-        -> TachoLimit -- ^ the limit
-        -> NXT()
-pollForCount iorC port limit=pollForStop iorC $ do
-        OutputState _ _ _ _ _ state _ count _ _<-getOutputState port
-        when (state/=MotorRunStateIdle && count<limit) (do
-                liftIO $ threadDelay 500
-                pollForCount iorC port limit
-                )       
-  
--- | wait for the input value to reach the given value      
-pollForScaled :: IORef Bool -- ^ the stop signal ioref
-         -> InputPort -- ^ the input port 
-         -> ScaledValue -- ^ the value to wait for
-         -> NXT()
-pollForScaled iorC port v=pollForStop iorC $ do
-      InputValue _ _ _ _ _ _ _ scalV _<-getInputValues port
-      when (scalV==v) ( do
-                liftIO $ threadDelay 500
-                pollForScaled iorC port v
-                ) 
 
--- | only perform the given action if the user hasn't said stop                
-pollForStop :: IORef Bool  -- ^ the stop signal ioref
-        -> NXT() -- ^ the action to perform 
-        -> NXT()
-pollForStop iorC f=do
-        c<-liftIO $ atomicModifyIORef iorC (\a->(a,a)) 
-        when c f
         
