@@ -22,7 +22,9 @@ executable bumper
   other-modules:   Robotics.NXT.Samples.Helpers
 
 executable gator
-  build-depends:   base >= 4
+  build-depends:   
+                   base >= 4,
+                   GLUT
   hs-source-dirs:  src
   ghc-options:     -Wall -rtsopts
   other-modules:   Robotics.NXT.Samples.Helpers

@@ -2,10 +2,11 @@
 module Robotics.NXT.Samples.Helpers where
 
 import Robotics.NXT
+import Robotics.NXT.Sensor.Ultrasonic
 
 import Control.Concurrent (threadDelay)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when)
+import Control.Monad (when, unless)
 
 import Data.IORef
 
@@ -83,3 +84,19 @@ pollForStop :: PollForStop -- ^ the stopping action
 pollForStop pfs f=do
         c<-pfs
         when c f
+        
+pollForUltrasonic :: PollForStop
+                                    -> InputPort
+                                    -> Measurement
+                                    -> NXT ()
+pollForUltrasonic iorC port v=pollForStop iorC $ do
+      mM<-usGetMeasurement port 0
+      ok<-case mM of
+        Just m->do
+                liftIO $ print m
+                return $ m<v
+        Nothing->return False
+      unless ok ( do
+                liftIO $ threadDelay 50000
+                pollForUltrasonic iorC port v
+                )      
