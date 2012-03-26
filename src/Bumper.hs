@@ -10,10 +10,11 @@ import Robotics.NXT.Samples.Helpers
 import System.Environment (getArgs)
 import Control.Concurrent (threadDelay,forkIO)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (forever)
 
 import Data.IORef
 import System.IO
+import Control.Monad.State.Lazy (evalStateT)
+import Control.Monad.Trans.Class (lift)
 
 -- | the main method
 main :: IO()
@@ -29,32 +30,28 @@ main = do
                 return () 
                 )
         withNXT device (do
-                reset [B,C]
-                forever $ loop $ pollForStopIOR iorC
-                reset [B,C]
+                evalStateT (do
+                        reset [B,C]
+                        forever loop 
+                        reset [B,C]
+                        ) (pollForStopIOR iorC)
                 liftIO $ threadDelay 1000000  -- wait before killing everything probably not needed after reset   
                 )
         --killThread tid 
 
--- | waits for user to press space, this stops the robot
-waitForStop :: IORef Bool-> IO()
-waitForStop iorC=do
-        c<-getChar
-        if c == ' ' then
-          do atomicModifyIORef iorC (\ a -> (False, a))
-             return ()
-          else waitForStop iorC
+
 
 -- | the main loop for the robot
-loop :: PollForStop -- ^ the stopping action
-        -> NXT()
-loop iorC= do
-  move iorC [B,C] 75 [0,0] 0 -- move forever
-  setInputModeConfirm One Switch BooleanMode -- set the sensor on port One to switch mode
-  pollForScaled iorC One 0 -- wait for sensor to be triggered
+loop :: --PollForStop -- ^ the stopping action
+        -- -> 
+        StopSt()
+loop = do
+  move  [B,C] 75 [0,0] 0 -- move forever
+  lift $ setInputModeConfirm One Switch BooleanMode -- set the sensor on port One to switch mode
+  pollForScaled  One 0 -- wait for sensor to be triggered
   stop [B,C] -- stop
-  move iorC [B,C] (-75) [0,0] 360 -- reverse
-  move iorC [B,C] (-75) [100,-100] 360 -- turn
+  move [B,C] (-75) [0,0] 360 -- reverse
+  move [B,C] (-75) [100,-100] 360 -- turn
   stop [B,C] -- stop
   
 

@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 -- | helper method around the NXT library calls
 module Robotics.NXT.Samples.Helpers where
 
@@ -9,37 +10,42 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, unless)
 
 import Data.IORef
+import Control.Monad.State.Lazy (StateT, get)
+import Control.Monad.Trans.Class (lift)
 
 
 type PollForStop= NXT Bool
 
+type StopSt=StateT PollForStop NXT
+
 -- | reset the NXT brick motors
 reset :: [OutputPort] -- ^ the output ports
-        -> NXT()
+        -> StopSt()
 reset = mapM_ resetMotor
 
   
 -- | reset a motor
 resetMotor :: OutputPort -- ^ the output port
-        -> NXT()
-resetMotor p= mapM_ (resetMotorPosition p) [InternalPosition,AbsolutePosition,RelativePosition]
+        -> StopSt()
+resetMotor p= lift $ mapM_ (resetMotorPosition p) [InternalPosition,AbsolutePosition,RelativePosition]
 
 -- | stop the motors on the given port  
-stop :: [OutputPort] -> NXT()
-stop ports=mapM_ (\p->setOutputStateConfirm p 0 [Regulated,Brake] (regulate ports) 0 MotorRunStateIdle 0) ports
+stop :: [OutputPort] -> StopSt()
+stop ports=lift $ mapM_ (\p->setOutputStateConfirm p 0 [Regulated,Brake] (regulate ports) 0 MotorRunStateIdle 0) ports
        
 -- | move motors on the given ports till the limit has been reached or the stop signal sent       
-move :: PollForStop -- ^ the stopping action
-        -> [OutputPort] -- ^ the output port
+move :: --PollForStop -- ^ the stopping action
+        -- -> 
+        [OutputPort] -- ^ the output port
         -> OutputPower  -- ^ the power to apply
         -> [TurnRatio] -- ^ the turn ratio between engine
         -> TachoLimit -- ^ the move limit
-        -> NXT()
-move iorC ports power ratios limit=pollForStop iorC $ do
+        -> StopSt()
+move ports power ratios limit=pollForStop $ do
         let port1= head ports
-        OutputState _ _ _ _ _ _ _ count _ _<-getOutputState port1
-        mapM_ (\(p,r)->setOutputStateConfirm p power [Regulated,MotorOn] (regulate ports) r MotorRunStateRunning limit) $ zip ports ratios
-        when (limit>0) (pollForCount iorC port1 (count+limit))
+        OutputState _ _ _ _ _ _ _ count _ _<-lift $ getOutputState port1
+        mapM_ (\(p,r)->lift $ setOutputStateConfirm p power [Regulated,MotorOn] (regulate ports) r MotorRunStateRunning limit) $ zip ports ratios
+        when (limit>0) (pollForCount port1 (count+limit))
       
 regulate :: [OutputPort] ->  RegulationMode
 regulate [_]=RegulationModeIdle
@@ -47,27 +53,29 @@ regulate [] =RegulationModeIdle
 regulate _ = RegulationModeMotorSync
       
 -- | wait for the given motor to have reached the limit        
-pollForCount :: PollForStop -- ^ the stopping action
-        -> OutputPort -- ^ the output port
+pollForCount :: --PollForStop -- ^ the stopping action
+        -- -> 
+        OutputPort -- ^ the output port
         -> TachoLimit -- ^ the limit
-        -> NXT()
-pollForCount iorC port limit=pollForStop iorC $ do
-        OutputState _ _ _ _ _ state _ count _ _<-getOutputState port
+        -> StopSt()
+pollForCount port limit=pollForStop $ do
+        OutputState _ _ _ _ _ state _ count _ _<-lift $ getOutputState port
         when (state/=MotorRunStateIdle && count<limit) (do
                 liftIO $ threadDelay 500
-                pollForCount iorC port limit
+                pollForCount port limit
                 )       
   
 -- | wait for the input value to reach the given value      
-pollForScaled :: PollForStop -- ^ the stopping action
-         -> InputPort -- ^ the input port 
+pollForScaled :: -- PollForStop -- ^ the stopping action
+         -- -> 
+         InputPort -- ^ the input port 
          -> ScaledValue -- ^ the value to wait for
-         -> NXT()
-pollForScaled iorC port v=pollForStop iorC $ do
-      InputValue _ _ _ _ _ _ _ scalV _<-getInputValues port
+         -> StopSt()
+pollForScaled port v=pollForStop $ do
+      InputValue _ _ _ _ _ _ _ scalV _<-lift $ getInputValues port
       when (scalV==v) ( do
                 liftIO $ threadDelay 500
-                pollForScaled iorC port v
+                pollForScaled port v
                 ) 
 
 pollForStopIOR :: IORef Bool  -- ^ the stop signal ioref
@@ -78,19 +86,29 @@ pollNeverStop :: PollForStop
 pollNeverStop = return True
 
 -- | only perform the given action if the user hasn't said stop                
-pollForStop :: PollForStop -- ^ the stopping action
-        -> NXT() -- ^ the action to perform 
-        -> NXT()
-pollForStop pfs f=do
-        c<-pfs
+pollForStop :: --PollForStop -- ^ the stopping action
+        -- -> 
+        StopSt () -- ^ the action to perform 
+        -> StopSt ()
+pollForStop f=do
+        c<-lift =<< get
         when c f
+   
+forever ::   StopSt () -- ^ the action to perform 
+        -> StopSt ()
+forever f=do
+        c<-lift =<< get
+        when c (do
+                f
+                forever f)
         
-pollForUltrasonic :: PollForStop
-                                    -> InputPort
+pollForUltrasonic :: --PollForStop
+                     --               -> 
+                        InputPort
                                     -> Measurement
-                                    -> NXT ()
-pollForUltrasonic iorC port v=pollForStop iorC $ do
-      mM<-usGetMeasurement port 0
+                                    -> StopSt ()
+pollForUltrasonic port v=pollForStop $ do
+      mM<-lift $ usGetMeasurement port 0
       ok<-case mM of
         Just m->do
                 liftIO $ print m
@@ -98,5 +116,14 @@ pollForUltrasonic iorC port v=pollForStop iorC $ do
         Nothing->return False
       unless ok ( do
                 liftIO $ threadDelay 50000
-                pollForUltrasonic iorC port v
-                )      
+                pollForUltrasonic port v
+                )     
+                
+-- | waits for user to press space, this stops the robot
+waitForStop :: IORef Bool-> IO()
+waitForStop iorC=do
+        c<-getChar
+        if c == ' ' then
+          do atomicModifyIORef iorC (\ a -> (False, a))
+             return ()
+          else waitForStop iorC                 
